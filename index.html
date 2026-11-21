@@ -888,8 +888,8 @@
   }
 
   // --- ARABIC RESHAPING & RTL SUPPORT ---
-  // Vormt standaard Arabische letters (0x0600-0x06FF) dynamisch om naar Presentation Forms B (0xFE70-0xFEFF)
-  // inclusief Lam-Alef ligaturen, zodat Three.js FontLoader vloeiende verbindingen genereert
+  // Vormt standaard Arabische letters (0x0600-0x06FF) dynamisch om naar Presentation Forms A & B
+  // inclusief volledige ondersteuning voor الله (Allah-ligatuur), Lam-Alef en leestekens (tashkeel)
   const ARABIC_FORMS = {
     0x0621: [0xFE80, 0, 0, 0],
     0x0622: [0xFE81, 0, 0, 0xFE82],
@@ -936,6 +936,19 @@
     0x0627: [0xFEFB, 0xFEFC]
   };
 
+  // Tashkeel / diakritische leestekens toewijzen aan Presentation Forms
+  const ARABIC_DIACRITICS_MAP = {
+    0x064B: 0xFE70, // Fathatan
+    0x064C: 0xFE72, // Dammatan
+    0x064D: 0xFE74, // Kasratan
+    0x064E: 0xFE76, // Fatha
+    0x064F: 0xFE78, // Damma
+    0x0650: 0xFE7A, // Kasra
+    0x0651: 0xFE7C, // Shadda
+    0x0652: 0xFE7E, // Sukun
+    0x0670: 0x0670  // Dagger Alif
+  };
+
   function isArabicTransparent(code) {
     return (code >= 0x064B && code <= 0x065F) || code === 0x0670;
   }
@@ -956,6 +969,10 @@
 
   function reshapeArabic(text) {
     if (!text) return '';
+    // Speciale vervanging voor het woord Allah (inclusief met tashkeel) -> U+FDF2
+    const allahRegex = /ا\u064E?ل\u0651?ل\u0670?ه\u0650?/g;
+    text = text.replace(allahRegex, '\uFDF2');
+
     const codes = [];
     for (let i = 0; i < text.length; i++) {
       codes.push(text.charCodeAt(i));
@@ -980,6 +997,8 @@
     for (let i = 0; i < merged.length; i++) {
       const item = merged[i];
       if (item.type === 'char' && isArabicTransparent(item.code)) {
+        // Behoud leestekens / tashkeel expliciet in plaats van ze weg te gooien!
+        shaped.push(ARABIC_DIACRITICS_MAP[item.code] || item.code);
         continue;
       }
 
@@ -1606,12 +1625,16 @@
       chars = [...text].map((char, originalIdx) => ({ char, colorIdx: originalIdx }));
     }
 
+    // Voor Arabische tekst worden letters van hetzelfde woord aaneengeschakeld (zonder tussenruimte)
+    // Tussenruimte / spacing wordt enkel toegepast tussen afzonderlijke woorden of bij LTR tekst.
+    const isDiacritic = (c) => (c >= '\uFE70' && c <= '\uFE7F') || (c >= '\u064B' && c <= '\u065F') || c === '\u0670';
+
     chars.forEach(({ char, colorIdx }, idx) => {
       if (char === ' ') {
         if (currentLayout === 'vertical') {
           currentY -= size * 0.45;
         } else {
-          currentX += size * 0.35;
+          currentX += size * 0.35 + spacing;
         }
         return;
       }
@@ -1672,7 +1695,7 @@
 
         letterGroup.position.set(0, currentY - charHeight, 0);
         modelGroup.add(letterGroup);
-        currentY -= (charHeight + spacing);
+        currentY -= (charHeight + (isArabic ? spacing * 0.2 : spacing));
       } else {
         mesh.position.x = -balloonGeo.boundingBox.min.x;
         mesh.position.y = -balloonGeo.boundingBox.min.y;
@@ -1696,7 +1719,18 @@
 
         letterGroup.position.set(currentX, 0, 0);
         modelGroup.add(letterGroup);
-        currentX += charWidth + spacing;
+
+        if (isArabic) {
+          // Bij Arabisch verbinden de letters van hetzelfde woord met een lichte overlap (-15%)
+          // zodat het één aaneengesloten vloeiend 3D-woord vormt. Diakrieten schuiven mee met de letter.
+          if (isDiacritic(char)) {
+            currentX += charWidth * 0.3;
+          } else {
+            currentX += Math.max(charWidth * 0.82, charWidth - inflate * 0.4);
+          }
+        } else {
+          currentX += charWidth + spacing;
+        }
       }
     });
 
