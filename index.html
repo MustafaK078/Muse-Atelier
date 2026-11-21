@@ -969,6 +969,9 @@
 
   function reshapeArabic(text) {
     if (!text) return '';
+    // Speciale vervanging voor het woord Allah (inclusief met tashkeel) -> U+FDF2
+    const allahRegex = /ا\u064E?ل\u0651?ل\u0670?ه\u0650?/g;
+    text = text.replace(allahRegex, '\uFDF2');
 
     const codes = [];
     for (let i = 0; i < text.length; i++) {
@@ -1467,8 +1470,8 @@
 
     // Grid-resolutie in mm: 0.40 - 0.55 mm geeft super gladde curven en snelle berekening onder 35ms
     const res = Math.max(0.36, Math.min(0.55, size / 150));
-    // Dichtheid / Puffyness: alleen extra stroke toevoegen als density bewust groter is dan 0
-    const strokeWidth = density > 0 ? density * 0.25 : 0;
+    // Dichtheid / Puffyness: maakt de lettertrajecten voller/dikker voor het opblazen
+    const strokeWidth = Math.max(0.4, (inflate - 2) * 0.30 + (density || 0));
 
     const raster = rasterFromShapes(shapes, res, strokeWidth, 4);
     if (!raster) return null;
@@ -1718,11 +1721,12 @@
         modelGroup.add(letterGroup);
 
         if (isArabic) {
-          // Bij Arabisch verbinden de opeenvolgende letters op natuurlijke wijze. Spacing regelt tussenruimte.
+          // Bij Arabisch verbinden de letters van hetzelfde woord met een lichte overlap (-15%)
+          // zodat het één aaneengesloten vloeiend 3D-woord vormt. Diakrieten schuiven mee met de letter.
           if (isDiacritic(char)) {
-            currentX += charWidth * 0.35;
+            currentX += charWidth * 0.3;
           } else {
-            currentX += charWidth + spacing;
+            currentX += Math.max(charWidth * 0.82, charWidth - inflate * 0.4);
           }
         } else {
           currentX += charWidth + spacing;
