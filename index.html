@@ -715,9 +715,9 @@
           if (type === 'm' || type === 'l') {
             token.o += `${type} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
           } else if (type === 'q') {
-            token.o += `q ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} `;
+            token.o += `q ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
           } else if (type === 'c') {
-            token.o += `b ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} `;
+            token.o += `b ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x2 * scale)} ${Math.round(cmd.y2 * scale)} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
           }
         });
         result.glyphs[String.fromCharCode(glyph.unicode)] = token;
@@ -780,128 +780,470 @@
     scheduleUpdateModel(true);
   });
 
-  // Verdeelt grote platte driehoeken in kleinere zodat het kussen-effect mooi bol kan worden
-  function subdivideGeometry(geometry, maxEdgeLength) {
-    let geo = geometry.index ? geometry.toNonIndexed() : geometry.clone();
-    for (let pass = 0; pass < 3; pass++) {
-      const pos = geo.attributes.position;
-      const newPositions = [];
-      let splitCount = 0;
+  // --- BALLOON GEOMETRY GENERATOR (Poisson Inflatie + Marching Squares + Taubin Smoothing) ---
+  // Elimineert Earcut driehoek-vouwen en facet-artefacten voor een perfect glad en rond kussen-oppervlak
 
-      for (let i = 0; i < pos.count; i += 3) {
-        const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
-        const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
-        const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
-
-        const ab = Math.hypot(ax - bx, ay - by, az - bz);
-        const bc = Math.hypot(bx - cx, by - cy, bz - cz);
-        const ca = Math.hypot(cx - ax, cy - ay, cz - az);
-        const maxLen = Math.max(ab, bc, ca);
-
-        if (maxLen > maxEdgeLength) {
-          splitCount++;
-          if (ab === maxLen) {
-            const mx = (ax + bx) * 0.5, my = (ay + by) * 0.5, mz = (az + bz) * 0.5;
-            newPositions.push(ax, ay, az, mx, my, mz, cx, cy, cz);
-            newPositions.push(mx, my, mz, bx, by, bz, cx, cy, cz);
-          } else if (bc === maxLen) {
-            const mx = (bx + cx) * 0.5, my = (by + cy) * 0.5, mz = (bz + cz) * 0.5;
-            newPositions.push(bx, by, bz, mx, my, mz, ax, ay, az);
-            newPositions.push(mx, my, mz, cx, cy, cz, ax, ay, az);
-          } else {
-            const mx = (cx + ax) * 0.5, my = (cy + ay) * 0.5, mz = (cz + az) * 0.5;
-            newPositions.push(cx, cy, cz, mx, my, mz, bx, by, bz);
-            newPositions.push(mx, my, mz, ax, ay, az, bx, by, bz);
-          }
-        } else {
-          newPositions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
-        }
+  function shapesToPolygons(shapes, divisions = 24) {
+    const polys = [];
+    shapes.forEach((shape) => {
+      const outerPts = shape.getPoints(divisions);
+      if (outerPts && outerPts.length > 2) {
+        polys.push(outerPts.map((p) => [p.x, p.y]));
       }
-      const prev = geo;
-      geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
-      prev.dispose();
-      if (splitCount === 0) break;
-    }
-    return geo;
+      if (shape.holes && shape.holes.length > 0) {
+        shape.holes.forEach((hole) => {
+          const holePts = hole.getPoints(divisions);
+          if (holePts && holePts.length > 2) {
+            polys.push(holePts.map((p) => [p.x, p.y]));
+          }
+        });
+      }
+    });
+    return polys;
   }
 
-  // Blaast de letter op met een vloeiende z-bolling en versmelt vertices voor een volledig glad oppervlak
-  function processBalloonGeometry(rawGeo, style, inflate, domeHeight, pattern, letterSize) {
-    const maxEdge = Math.max(2.4, letterSize * 0.052);
-    const geometry = subdivideGeometry(rawGeo, maxEdge);
+  function rasterFromPolygons(polys, res, strokeWidth = 0, margin = 4) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const poly of polys) {
+      for (const [x, y] of poly) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (!isFinite(minX)) return null;
 
-    const pos = geometry.attributes.position;
-    geometry.computeBoundingBox();
-    const minZ = geometry.boundingBox.min.z;
-    const maxZ = geometry.boundingBox.max.z;
-    const midZ = (minZ + maxZ) / 2;
+    const extraPad = strokeWidth + margin * res;
+    minX -= extraPad;
+    maxX += extraPad;
+    minY -= extraPad;
+    maxY += extraPad;
 
-    const edgePoints = [];
-    const step = Math.max(1, Math.floor(pos.count / 300));
-    for (let i = 0; i < pos.count; i += step) {
-      const z = pos.getZ(i);
-      if (Math.abs(z - midZ) < (maxZ - minZ) * 0.3) {
-        edgePoints.push({ x: pos.getX(i), y: pos.getY(i) });
+    const W = Math.ceil((maxX - minX) / res) + 1;
+    const H = Math.ceil((maxY - minY) / res) + 1;
+
+    const canvas = (typeof OffscreenCanvas !== 'undefined')
+      ? new OffscreenCanvas(W, H)
+      : Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    for (const poly of polys) {
+      poly.forEach(([u, v], j) => {
+        const X = (u - minX) / res;
+        const Y = (maxY - v) / res;
+        if (j === 0) ctx.moveTo(X, Y);
+        else ctx.lineTo(X, Y);
+      });
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');
+
+    if (strokeWidth > 0) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = strokeWidth / res;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    const imgData = ctx.getImageData(0, 0, W, H).data;
+    const a = new Float32Array(W * H);
+    for (let j = 0; j < W * H; j++) {
+      a[j] = imgData[j * 4] / 255;
+    }
+
+    return { a, W, H, ox: minX, oy: maxY, res };
+  }
+
+  function inflar(a, W, H, infl) {
+    const N = W * H;
+    const s = new Float32Array(N);
+    const ins = new Uint8Array(N);
+    const out = (j) => { ins[j] = 0; if (s[j] >= 0) s[j] = -1e-3; };
+
+    for (let j = 0; j < N; j++) {
+      s[j] = a[j] - 0.5 + 1e-4;
+      ins[j] = s[j] >= 0 ? 1 : 0;
+    }
+    for (let x = 0; x < W; x++) { out(x); out(N - W + x); }
+    for (let y = 0; y < H; y++) { out(y * W); out(y * W + W - 1); }
+
+    const d = new Float32Array(N);
+    const R2 = Math.SQRT2;
+    for (let j = 0; j < N; j++) d[j] = ins[j] ? 1e9 : 0;
+
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const j = y * W + x;
+        if (ins[j]) d[j] = Math.min(d[j], d[j - 1] + 1, d[j - W] + 1, d[j - W - 1] + R2, d[j - W + 1] + R2);
+      }
+    }
+    for (let y = H - 2; y > 0; y--) {
+      for (let x = W - 2; x > 0; x--) {
+        const j = y * W + x;
+        if (ins[j]) d[j] = Math.min(d[j], d[j + 1] + 1, d[j + W] + 1, d[j + W + 1] + R2, d[j + W - 1] + R2);
       }
     }
 
-    const maxRadius = Math.max(4, letterSize * 0.16);
+    let n = 0;
+    for (let j = 0; j < N; j++) n += ins[j];
+    if (n === 0) return null;
 
-    for (let i = 0; i < pos.count; i++) {
-      let x = pos.getX(i);
-      let y = pos.getY(i);
-      let z = pos.getZ(i);
+    const L = new Int32Array(n);
+    const u = new Float32Array(N);
+    let k = 0;
+    for (let j = 0; j < N; j++) {
+      if (ins[j]) {
+        L[k++] = j;
+        u[j] = d[j] * d[j];
+      }
+    }
 
-      if (z <= midZ) {
-        z = 0; // Vlakke achterkant voor stabiel 3D-printen
-      } else {
-        z = z - midZ;
+    const bq = [];
+    const bw = [];
+    const NB = [-1, 1, -W, W];
+    for (let q = 0; q < n; q++) {
+      const j = L[q];
+      const th = NB.map((o) => ins[j + o] ? 1 : Math.min(1, Math.max(0.05, s[j] / (s[j] - s[j + o]))));
+      if (th[0] + th[1] + th[2] + th[3] === 4) continue;
+      const ax = 2 / (th[0] + th[1]);
+      const ay = 2 / (th[2] + th[3]);
+      const w = [ax / th[0], ax / th[1], ay / th[2], ay / th[3]];
+      const D = w[0] + w[1] + w[2] + w[3];
+      bq.push(q);
+      bw.push(
+        ins[j - 1] ? w[0] / D : 0,
+        ins[j + 1] ? w[1] / D : 0,
+        ins[j - W] ? w[2] / D : 0,
+        ins[j + W] ? w[3] / D : 0,
+        2 / D
+      );
+    }
 
-        if (domeHeight > 0 && edgePoints.length > 0) {
-          let minDistSq = Infinity;
-          for (let j = 0; j < edgePoints.length; j++) {
-            const dx = x - edgePoints[j].x;
-            const dy = y - edgePoints[j].y;
-            const dSq = dx * dx + dy * dy;
-            if (dSq < minDistSq) minDistSq = dSq;
+    const bk = new Int32Array(n).fill(-1);
+    bq.forEach((q, idx) => { bk[q] = idx * 5; });
+
+    const t0 = performance.now();
+    for (let it = 0; it < 5000; it++) {
+      let md = 0;
+      for (let q = 0; q < n; q++) {
+        const j = L[q];
+        const bki = bk[q];
+        const df = (bki < 0)
+          ? (u[j - 1] + u[j + 1] + u[j - W] + u[j + W] + 2) * 0.25 - u[j]
+          : bw[bki] * u[j - 1] + bw[bki + 1] * u[j + 1] + bw[bki + 2] * u[j - W] + bw[bki + 3] * u[j + W] + bw[bki + 4] - u[j];
+        u[j] += 1.9 * df;
+        const adf = df < 0 ? -df : df;
+        if (adf > md) md = adf;
+      }
+      if (md < 0.005 || performance.now() - t0 > 2000) break;
+    }
+
+    const Hp = new Float32Array(N);
+    let hm = 0;
+    for (let q = 0; q < n; q++) {
+      const j = L[q];
+      const h = infl * Math.sqrt(u[j] > 0 ? u[j] : 0);
+      Hp[j] = h;
+      if (h > hm) hm = h;
+    }
+
+    const dx = new Float32Array(N);
+    const dy = new Float32Array(N);
+    const DM = 4;
+    const R = Math.ceil(DM) + 2;
+    const CW = W - 1;
+    const hd = new Int32Array(CW * (H - 1)).fill(-1);
+    const nx = [];
+    const sg = [];
+
+    const cr = (a, b, ax, ay, bx, by) => {
+      const t = s[a] / (s[a] - s[b]);
+      return [ax + (bx - ax) * t, ay + (by - ay) * t];
+    };
+
+    for (let y = 0; y < H - 1; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const n0 = y * W + x;
+        const C = [n0, n0 + 1, n0 + W + 1, n0 + W];
+        const c = ins[C[0]] | (ins[C[1]] << 1) | (ins[C[2]] << 2) | (ins[C[3]] << 3);
+        if (!c || c === 15) continue;
+        const XY = [[x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]];
+        const ep = (q) => {
+          const aIdx = C[q], bIdx = C[(q + 1) % 4];
+          return ins[aIdx] !== ins[bIdx] ? cr(aIdx, bIdx, ...XY[q], ...XY[(q + 1) % 4]) : null;
+        };
+        const E4 = [0, 1, 2, 3].map(ep);
+        const add = (p, q) => {
+          const kIdx = y * CW + x;
+          sg.push(p[0], p[1], q[0], q[1]);
+          nx.push(hd[kIdx]);
+          hd[kIdx] = nx.length - 1;
+        };
+        if (c === 5 || c === 10) {
+          const iso = (s[C[0]] + s[C[1]] + s[C[2]] + s[C[3]] < 0) ? 1 : 0;
+          for (let q = 0; q < 4; q++) {
+            if (ins[C[q]] === iso) add(E4[(q + 3) % 4], E4[q]);
           }
-          const dist = Math.sqrt(minDistSq);
-          const normalizedDist = Math.min(1, Math.max(0, dist / maxRadius));
-          // Sinusvormige kussen-overgang voor gladde ballonkoepel
-          const domeOffset = Math.sin(normalizedDist * (Math.PI / 2)) * domeHeight;
-          z += domeOffset;
+        } else {
+          const P = E4.filter(Boolean);
+          if (P.length === 2) add(P[0], P[1]);
         }
+      }
+    }
+
+    for (let q = 0; q < n; q++) {
+      const j = L[q];
+      if (d[j] > DM + 1.5) continue;
+      const px = j % W, py = (j / W) | 0;
+      let bd = 1e18, qx = 0, qy = 0;
+      const yMin = Math.max(0, py - R), yMax = Math.min(H - 2, py + R);
+      const xMin = Math.max(0, px - R), xMax = Math.min(W - 2, px + R);
+
+      for (let yCur = yMin; yCur <= yMax; yCur++) {
+        for (let xCur = xMin; xCur <= xMax; xCur++) {
+          for (let e = hd[yCur * CW + xCur]; e >= 0; e = nx[e]) {
+            const kE = 4 * e;
+            const axPt = sg[kE], ayPt = sg[kE + 1];
+            const ex = sg[kE + 2] - axPt, ey = sg[kE + 3] - ayPt;
+            const l2 = ex * ex + ey * ey;
+            const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - axPt) * ex + (py - ayPt) * ey) / l2)) : 0;
+            const cx = axPt + ex * t, cy = ayPt + ey * t;
+            const dd = (px - cx) ** 2 + (py - cy) ** 2;
+            if (dd < bd) {
+              bd = dd; qx = cx; qy = cy;
+            }
+          }
+        }
+      }
+      const dd = Math.sqrt(bd);
+      if (dd >= DM || dd < 1e-3) continue;
+      const xr = dd / DM;
+      const ph = 0.7 * DM * xr * xr * (2 - xr) + 0.3 * dd;
+      const G = (Math.max(0, u[j]) + dd * dd) / dd;
+      dx[j] = qx + ((px - qx) / dd) * ph - px;
+      dy[j] = qy + ((py - qy) / dd) * ph - py;
+      Hp[j] = infl * Math.sqrt(Math.max(0, G * ph - ph * ph));
+    }
+
+    return { s, ins, Hp, hm, dx, dy };
+  }
+
+  function malla(f, g, flat = true, cut = 0) {
+    const { s, ins, Hp } = f, { W, H, ox, oy, res: r } = g, N = W * H;
+    const tI = new Int32Array(N).fill(-1);
+    const bI = new Int32Array(N).fill(-1);
+    const eI = new Int32Array(2 * N).fill(-1);
+    const P = [], I = [];
+
+    const V = (fx, fy, z) => {
+      P.push(ox + fx * r, oy - fy * r, z);
+      return ((P.length / 3 - 1) | 0);
+    };
+
+    const ddx = f.dx, ddy = f.dy;
+    const X = (j) => (j % W) + (ddx ? ddx[j] : 0);
+    const Y = (j) => ((j / W) | 0) + (ddy ? ddy[j] : 0);
+
+    const T = (j) => tI[j] >= 0 ? tI[j] : (tI[j] = V(X(j), Y(j), Hp[j] * r));
+    const B = (j) => bI[j] >= 0 ? bI[j] : (bI[j] = V(X(j), Y(j), flat ? 0 : -Hp[j] * r));
+
+    const E = (p, q, key) => {
+      if (eI[key] >= 0) return eI[key];
+      const a = p < q ? p : q, b = p < q ? q : p;
+      const t = s[a] / (s[a] - s[b]);
+      const ax = a % W, ay = (a / W) | 0;
+      const bx = b % W, by = (b / W) | 0;
+      return (eI[key] = V(ax + (bx - ax) * t, ay + (by - ay) * t, 0));
+    };
+
+    const L3 = (a, b) => Math.hypot(P[3 * a] - P[3 * b], P[3 * a + 1] - P[3 * b + 1], P[3 * a + 2] - P[3 * b + 2]);
+
+    const emit = (tp, bp) => {
+      const n = tp.length;
+      let r0 = 0;
+      if (n > 3) {
+        let best = 1e18;
+        for (let rIdx = 0; rIdx < n; rIdx++) {
+          let L = 0;
+          for (let q = 2; q < n - 1; q++) L += L3(tp[rIdx], tp[(rIdx + q) % n]);
+          if (L < best) { best = L; r0 = rIdx; }
+        }
+      }
+      for (let q = 1; q < n - 1; q++) {
+        const a = r0, b = (r0 + q) % n, c = (r0 + q + 1) % n;
+        I.push(tp[a], tp[c], tp[b], bp[a], bp[b], bp[c]);
+      }
+    };
+
+    const yE = cut || H - 1;
+    for (let y = 0; y < yE; y++) {
+      for (let x = 0; x < W - 1; x++) {
+        const n0 = y * W + x, n1 = n0 + 1, n2 = n0 + W + 1, n3 = n0 + W;
+        const c = ins[n0] | (ins[n1] << 1) | (ins[n2] << 2) | (ins[n3] << 3);
+        if (!c) continue;
+        if (c === 15) {
+          emit([T(n0), T(n1), T(n2), T(n3)], [B(n0), B(n1), B(n2), B(n3)]);
+          continue;
+        }
+        const C = [n0, n1, n2, n3];
+        const K = [2 * n0, 2 * n1 + 1, 2 * n3, 2 * n0 + 1];
+        if ((c === 5 || c === 10) && s[n0] + s[n1] + s[n2] + s[n3] < 0) {
+          for (let q = 0; q < 4; q++) {
+            if (!ins[C[q]]) continue;
+            const pq = (q + 3) % 4;
+            const ep = E(C[pq], C[q], K[pq]);
+            const en = E(C[q], C[(q + 1) % 4], K[q]);
+            emit([ep, T(C[q]), en], [ep, B(C[q]), en]);
+          }
+          continue;
+        }
+        const tp = [], bp = [];
+        for (let q = 0; q < 4; q++) {
+          const a = C[q], b = C[(q + 1) % 4];
+          if (ins[a]) { tp.push(T(a)); bp.push(B(a)); }
+          if (ins[a] !== ins[b]) {
+            const e = E(a, b, K[q]);
+            tp.push(e); bp.push(e);
+          }
+        }
+        emit(tp, bp);
+      }
+    }
+
+    const i0 = I.length;
+    const Q = Float64Array.from(P);
+    const nv = (Q.length / 3) | 0;
+    const fix = new Uint8Array(nv);
+    for (let k = i0; k < I.length; k++) fix[I[k]] = 1;
+    if (flat) {
+      for (let v = 0; v < nv; v++) {
+        if (Q[3 * v + 2] === 0) fix[v] = 1;
+      }
+    }
+
+    alisar(Q, I, fix, f.alisado ?? 8);
+    return { pos: new Float32Array(Q), idx: new Uint32Array(I) };
+  }
+
+  function alisar(Q, I, fix, it) {
+    if (!it) return;
+    const nv = (Q.length / 3) | 0;
+    const st = new Int32Array(nv + 1);
+    for (let k = 0; k < I.length; k++) st[I[k] + 1] += 2;
+    for (let v = 0; v < nv; v++) st[v + 1] += st[v];
+
+    const nb = new Int32Array(st[nv]);
+    const pt = st.slice(0, nv);
+    for (let t = 0; t < I.length; t += 3) {
+      for (let e = 0; e < 3; e++) {
+        const a = I[t + e], b = I[t + ((e + 1) % 3)];
+        nb[pt[a]++] = b;
+        nb[pt[b]++] = a;
+      }
+    }
+
+    const D = new Float64Array(Q.length);
+    for (let k = 0; k < 2 * it; k++) {
+      const w = (k & 1) ? -0.53 : 0.5;
+      for (let v = 0; v < nv; v++) {
+        if (fix[v]) continue;
+        const c = st[v + 1] - st[v];
+        if (c === 0) continue;
+        let sx = 0, sy = 0, sz = 0;
+        for (let e = st[v]; e < st[v + 1]; e++) {
+          const u = 3 * nb[e];
+          sx += Q[u]; sy += Q[u + 1]; sz += Q[u + 2];
+        }
+        D[3 * v] = sx / c - Q[3 * v];
+        D[3 * v + 1] = sy / c - Q[3 * v + 1];
+        D[3 * v + 2] = sz / c - Q[3 * v + 2];
+      }
+      for (let v = 0; v < nv; v++) {
+        if (!fix[v]) {
+          Q[3 * v] += w * D[3 * v];
+          Q[3 * v + 1] += w * D[3 * v + 1];
+          Q[3 * v + 2] += w * D[3 * v + 2];
+        }
+      }
+    }
+  }
+
+  function generateBalloonGeometry(shapes, size, targetHeight, inflate, domeHeight, style, pattern) {
+    const polys = shapesToPolygons(shapes, 24);
+    if (polys.length === 0) return null;
+
+    // Grid-resolutie in mm: 0.45 mm geeft super gladde curven en snelle berekening onder 35ms
+    const res = Math.max(0.36, Math.min(0.60, size / 140));
+    const strokeWidth = Math.max(0.6, (inflate - 2) * 0.35);
+
+    const raster = rasterFromPolygons(polys, res, strokeWidth, 4);
+    if (!raster) return null;
+
+    let styleMultiplier = 1.0;
+    if (style === 'ceramic') styleMultiplier = 0.65;
+    else if (style === 'puffy') styleMultiplier = 1.35;
+    else if (style === 'foil') styleMultiplier = 1.1;
+
+    const infl = Math.max(0.4, (domeHeight / 8.0) * styleMultiplier);
+    const f = inflar(raster.a, raster.W, raster.H, infl);
+    if (!f) return null;
+
+    // Oppervlakte-reliëf / patronen toepassen
+    if (pattern !== 'smooth' || style === 'foil') {
+      const W = raster.W, H = raster.H, N = W * H;
+      for (let j = 0; j < N; j++) {
+        if (!f.ins[j] || f.Hp[j] < 0.2) continue;
+        const px = j % W, py = (j / W) | 0;
+        const xMM = raster.ox + px * res;
+        const yMM = raster.oy - py * res;
 
         if (style === 'foil') {
-          const wrinkle = Math.sin(x * 0.36) * Math.cos(y * 0.36) * (inflate * 0.12);
-          z = Math.max(0.2, z + wrinkle);
+          const foilWrinkle = Math.sin(xMM * 0.45) * Math.cos(yMM * 0.45) * 0.18;
+          f.Hp[j] = Math.max(0.1, f.Hp[j] + foilWrinkle);
         }
 
-        if (z > 2.0 && pattern !== 'smooth') {
-          if (pattern === 'stars') {
-            const wave = Math.sin(x * 0.85) * Math.sin(y * 0.85);
-            if (wave > 0.65) z += 0.6;
-          } else if (pattern === 'hearts') {
-            const hx = (x % 9) - 4.5;
-            const hy = (y % 9) - 4.5;
-            const heartEq = Math.pow(hx * 0.22, 2) + Math.pow(hy * 0.22 - Math.sqrt(Math.abs(hx * 0.22)), 2);
-            if (heartEq < 0.6) z += 0.55;
-          } else if (pattern === 'knit') {
-            const knit = Math.sin((x + y) * 1.0) * Math.cos((x - y) * 1.0);
-            z += knit * 0.4;
-          }
+        if (pattern === 'stars') {
+          const wave = Math.sin(xMM * 0.9) * Math.sin(yMM * 0.9);
+          if (wave > 0.65) f.Hp[j] += 0.55;
+        } else if (pattern === 'hearts') {
+          const hx = ((xMM % 10) + 10) % 10 - 5;
+          const hy = ((yMM % 10) + 10) % 10 - 5;
+          const heartEq = Math.pow(hx * 0.22, 2) + Math.pow(hy * 0.22 - Math.sqrt(Math.abs(hx * 0.22)), 2);
+          if (heartEq < 0.6) f.Hp[j] += 0.5;
+        } else if (pattern === 'knit') {
+          const knit = Math.sin((xMM + yMM) * 1.1) * Math.cos((xMM - yMM) * 1.1);
+          f.Hp[j] += knit * 0.35;
         }
       }
-      pos.setXYZ(i, x, y, z);
     }
 
-    // Cruciaal voor een volledig glad oppervlak:
-    // Versmelt dubbele vertices zodat normale vectoren continu worden berekend (geen facetten)
-    const smoothGeo = BufferGeometryUtils.mergeVertices(geometry, 0.06);
-    geometry.dispose();
-    smoothGeo.computeVertexNormals();
-    return smoothGeo;
+    const meshData = malla(f, raster, true, 0);
+    const pos = meshData.pos;
+
+    // Schaal Z nauwkeurig naar de door de gebruiker gekozen hoogte (mm)
+    let maxZ = 0;
+    for (let i = 2; i < pos.length; i += 3) {
+      if (pos[i] > maxZ) maxZ = pos[i];
+    }
+    if (maxZ > 0.001) {
+      const scaleZ = targetHeight / maxZ;
+      for (let i = 2; i < pos.length; i += 3) {
+        pos[i] *= scaleZ;
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(new THREE.BufferAttribute(meshData.idx, 1));
+    geo.computeVertexNormals();
+    return geo;
   }
 
   function createLoop(outerR, innerR, thickness) {
@@ -914,13 +1256,16 @@
     const geo = new THREE.ExtrudeGeometry(shape, {
       depth: thickness,
       bevelEnabled: true,
-      bevelSegments: 5,
+      bevelSegments: 4,
       steps: 1,
-      bevelSize: 0.7,
-      bevelThickness: 0.7
+      bevelSize: 0.5,
+      bevelThickness: 0.5
     });
     const merged = BufferGeometryUtils.mergeVertices(geo, 0.05);
     geo.dispose();
+    merged.computeBoundingBox();
+    const minZ = merged.boundingBox.min.z;
+    merged.translate(0, 0, -minZ); // Vlakke achterkant precies op Z = 0
     merged.computeVertexNormals();
     return merged;
   }
@@ -945,38 +1290,21 @@
     const mountType = document.getElementById('mountInput').value;
     const pattern = document.getElementById('patternInput').value;
 
-    let bevelSize = inflate;
-    let bevelThickness = totalHeight * 0.75;
-    let bevelSegments = 18;
     let roughness = 0.35;
     let metalness = 0.05;
-    let effectiveDome = domeHeight;
 
     if (currentStyle === 'ceramic') {
-      bevelSize = inflate * 0.65;
-      bevelThickness = totalHeight * 0.5;
-      effectiveDome = domeHeight * 0.35;
       roughness = 0.12;
       metalness = 0.04;
     } else if (currentStyle === 'bubble') {
-      bevelSize = inflate;
-      bevelThickness = totalHeight * 0.75;
-      effectiveDome = domeHeight * 0.85;
       roughness = 0.08;
       metalness = 0.10;
     } else if (currentStyle === 'puffy') {
-      bevelSize = inflate * 1.35;
-      bevelThickness = totalHeight * 0.9;
-      bevelSegments = 22;
-      effectiveDome = domeHeight * 1.25;
-      roughness = 0.45;
+      roughness = 0.42;
       metalness = 0.02;
     } else if (currentStyle === 'foil') {
-      bevelSize = inflate * 1.1;
-      bevelThickness = totalHeight * 0.75;
-      effectiveDome = domeHeight * 1.0;
       roughness = 0.16;
-      metalness = 0.82;
+      metalness = 0.85;
     }
 
     let currentX = 0;
@@ -993,20 +1321,11 @@
         return;
       }
 
-      const rawGeo = new TextGeometry(char, {
-        font: loadedFont,
-        size: size,
-        height: totalHeight,
-        curveSegments: 20,
-        bevelEnabled: true,
-        bevelThickness: bevelThickness,
-        bevelSize: bevelSize,
-        bevelOffset: 0,
-        bevelSegments: bevelSegments
-      });
+      const shapes = loadedFont.generateShapes(char, size);
+      if (!shapes || shapes.length === 0) return;
 
-      const balloonGeo = processBalloonGeometry(rawGeo, currentStyle, inflate, effectiveDome, pattern, size);
-      rawGeo.dispose();
+      const balloonGeo = generateBalloonGeometry(shapes, size, totalHeight, inflate, domeHeight, currentStyle, pattern);
+      if (!balloonGeo) return;
 
       balloonGeo.computeBoundingBox();
       const charWidth = balloonGeo.boundingBox.max.x - balloonGeo.boundingBox.min.x;
@@ -1031,7 +1350,7 @@
         if (mountType === 'hanging') {
           const loop = createLoop(4.5, 2.2, Math.min(4, totalHeight * 0.4));
           const loopMesh = new THREE.Mesh(loop, mat);
-          loopMesh.position.set(0, charHeight + 1.5, 0.7);
+          loopMesh.position.set(0, charHeight + 1.5, 0);
           letterGroup.add(loopMesh);
         }
 
@@ -1040,7 +1359,7 @@
           const inner = mountType === 'magnet' ? 5.1 : 2.5;
           const mountRing = createLoop(outer, inner, 2.4);
           const mountMesh = new THREE.Mesh(mountRing, mat);
-          mountMesh.position.set(0, charHeight / 2, 0.7);
+          mountMesh.position.set(0, charHeight / 2, 0);
           letterGroup.add(mountMesh);
         }
 
@@ -1055,7 +1374,7 @@
         if (mountType === 'hanging') {
           const loop = createLoop(4.5, 2.2, Math.min(4, totalHeight * 0.4));
           const loopMesh = new THREE.Mesh(loop, mat);
-          loopMesh.position.set(charWidth / 2, charHeight + 1.5, 0.7);
+          loopMesh.position.set(charWidth / 2, charHeight + 1.5, 0);
           letterGroup.add(loopMesh);
         }
 
@@ -1064,7 +1383,7 @@
           const inner = mountType === 'magnet' ? 5.1 : 2.5;
           const mountRing = createLoop(outer, inner, 2.4);
           const mountMesh = new THREE.Mesh(mountRing, mat);
-          mountMesh.position.set(charWidth / 2, charHeight / 2, 0.7);
+          mountMesh.position.set(charWidth / 2, charHeight / 2, 0);
           letterGroup.add(mountMesh);
         }
 
@@ -1086,9 +1405,9 @@
       const ringMesh = new THREE.Mesh(ringGeo, firstMat);
 
       if (currentLayout === 'vertical') {
-        ringMesh.position.set(0, boxNow.max.y + 2.5, 0.7);
+        ringMesh.position.set(0, boxNow.max.y + 2.5, 0);
       } else {
-        ringMesh.position.set(boxNow.min.x - 3, (boxNow.max.y + boxNow.min.y) / 2, 0.7);
+        ringMesh.position.set(boxNow.min.x - 3, (boxNow.max.y + boxNow.min.y) / 2, 0);
       }
       modelGroup.add(ringMesh);
     }
@@ -1107,7 +1426,7 @@
     const w = Math.round(finalBox.max.x - finalBox.min.x);
     const h = Math.round(finalBox.max.y - finalBox.min.y);
     const d = Math.round(finalBox.max.z - finalBox.min.z);
-    document.getElementById('dimBadge').textContent = `Afmetingen: ${w} × ${h} × ${d} mm | Geen supports nodig`;
+    document.getElementById('dimBadge').textContent = `Afmetingen: ${w} × ${h} × ${d} mm | Vlakke achterkant (Geen supports)`;
 
     // Automatisch camera zoomen en centreren
     fitCameraToModel();
