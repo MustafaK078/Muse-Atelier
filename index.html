@@ -435,6 +435,11 @@
   </div>
 
   <div class="control-group">
+    <label>Dichtheid / Puffyness (vulling van de letter) <span id="densityVal">3.5</span></label>
+    <input type="range" id="densityInput" min="0" max="10" step="0.5" value="3.5" />
+  </div>
+
+  <div class="control-group">
     <label>Kussen-bolling omhoog (Z-bolling) <span id="domeVal">8.0</span></label>
     <input type="range" id="domeInput" min="0" max="20" step="0.5" value="8.0" />
   </div>
@@ -1175,13 +1180,14 @@
     }
   }
 
-  function generateBalloonGeometry(shapes, size, targetHeight, inflate, domeHeight, style, pattern) {
+  function generateBalloonGeometry(shapes, size, targetHeight, inflate, domeHeight, density, style, pattern) {
     const polys = shapesToPolygons(shapes, 24);
     if (polys.length === 0) return null;
 
     // Grid-resolutie in mm: 0.45 mm geeft super gladde curven en snelle berekening onder 35ms
     const res = Math.max(0.36, Math.min(0.60, size / 140));
-    const strokeWidth = Math.max(0.6, (inflate - 2) * 0.35);
+    // Dichtheid / Puffyness: maakt de lettertrajecten voller/dikker voor het opblazen (engordar)
+    const strokeWidth = Math.max(0.6, (inflate - 2) * 0.35 + (density || 0));
 
     const raster = rasterFromPolygons(polys, res, strokeWidth, 4);
     if (!raster) return null;
@@ -1285,6 +1291,7 @@
     const size = parseFloat(document.getElementById('sizeInput').value);
     const totalHeight = parseFloat(document.getElementById('heightInput').value);
     const inflate = parseFloat(document.getElementById('inflateInput').value);
+    const density = parseFloat(document.getElementById('densityInput').value || 3.5);
     const domeHeight = parseFloat(document.getElementById('domeInput').value);
     const spacing = parseFloat(document.getElementById('spacingInput').value);
     const mountType = document.getElementById('mountInput').value;
@@ -1324,7 +1331,7 @@
       const shapes = loadedFont.generateShapes(char, size);
       if (!shapes || shapes.length === 0) return;
 
-      const balloonGeo = generateBalloonGeometry(shapes, size, totalHeight, inflate, domeHeight, currentStyle, pattern);
+      const balloonGeo = generateBalloonGeometry(shapes, size, totalHeight, inflate, domeHeight, density, currentStyle, pattern);
       if (!balloonGeo) return;
 
       balloonGeo.computeBoundingBox();
@@ -1442,6 +1449,7 @@
     { id: 'sizeInput', valId: 'sizeVal' },
     { id: 'heightInput', valId: 'heightVal' },
     { id: 'inflateInput', valId: 'inflateVal' },
+    { id: 'densityInput', valId: 'densityVal' },
     { id: 'domeInput', valId: 'domeVal' },
     { id: 'spacingInput', valId: 'spacingVal' }
   ];
