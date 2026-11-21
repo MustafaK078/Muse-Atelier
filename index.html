@@ -287,6 +287,40 @@
       z-index: 5;
     }
 
+    .toast-notification {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-24px);
+      background: rgba(18, 48, 38, 0.95);
+      border: 1px solid var(--gold);
+      color: #ffffff;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      z-index: 99;
+      pointer-events: none;
+      opacity: 0;
+      transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast-notification.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    optgroup {
+      background: var(--card-bg);
+      color: var(--gold);
+      font-weight: 700;
+    }
+    option {
+      background: var(--card-bg);
+      color: #fff;
+      font-weight: 400;
+    }
+
     .mobile-panel-toggle {
       display: none;
       position: absolute;
@@ -378,12 +412,27 @@
   <div class="control-group">
     <label for="fontSelect">Lettertype</label>
     <select id="fontSelect">
-      <option value="helvetiker_bold" selected>Helvetiker Bold (Modern)</option>
-      <option value="helvetiker_regular">Helvetiker Regular (Strak)</option>
-      <option value="optimer_bold">Optimer Bold (Klassiek)</option>
-      <option value="gentilis_bold">Gentilis Bold (Futuristisch)</option>
-      <option value="droid_sans_bold">Droid Sans Bold (Rond)</option>
-      <option value="custom" disabled id="customFontOption">Eigen lettertype (.ttf / .otf)</option>
+      <optgroup label="🎈 Ballon & Display Lettertypes">
+        <option value="titan_one" selected>Titan One (Extra Bold Bubbly)</option>
+        <option value="lilita_one">Lilita One (Rond & Mollig)</option>
+        <option value="chewy">Chewy (Speels & Vrolijk)</option>
+        <option value="luckiest_guy">Luckiest Guy (Stoer & Cartoon)</option>
+        <option value="sniglet">Sniglet (Super Bol & Zacht)</option>
+        <option value="bungee">Bungee (Bold Display)</option>
+        <option value="righteous">Righteous (Modern & Gestroomlijnd)</option>
+        <option value="alfa_slab_one">Alfa Slab One (Zware Retro Blok)</option>
+        <option value="pacifico">Pacifico (Vloeiend Sierlijk Script)</option>
+      </optgroup>
+      <optgroup label="🔤 Standaard Lettertypes">
+        <option value="helvetiker_bold">Helvetiker Bold (Modern)</option>
+        <option value="helvetiker_regular">Helvetiker Regular (Strak)</option>
+        <option value="optimer_bold">Optimer Bold (Klassiek)</option>
+        <option value="gentilis_bold">Gentilis Bold (Futuristisch)</option>
+        <option value="droid_sans_bold">Droid Sans Bold (Rond)</option>
+      </optgroup>
+      <optgroup label="📁 Aangepast">
+        <option value="custom" disabled id="customFontOption">Eigen lettertype (.ttf / .otf)</option>
+      </optgroup>
     </select>
   </div>
 
@@ -461,6 +510,39 @@
     </select>
   </div>
 
+  <div class="section-title">4. Voorinstellingen & SQL Back-up</div>
+  <div class="control-group">
+    <label for="quickPresetSelect">Snelle Stijl Voorinstelling</label>
+    <select id="quickPresetSelect">
+      <option value="" disabled selected>— Kies een stijl preset —</option>
+      <option value="classic_puffy">🎈 Klassiek Puffy (Titan One)</option>
+      <option value="mega_fluffy">☁️ Mega Fluffy Cloud (Sniglet)</option>
+      <option value="foil_party">💎 Shiny Foil Balloon (Righteous)</option>
+      <option value="ceramic_deco">🏺 Mat Keramisch Luxe (Lilita One)</option>
+      <option value="chunky_retro">🎸 Retro Chunky Blok (Alfa Slab)</option>
+      <option value="keychain_compact">🔑 Mini Sleutelhanger (Compact)</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label for="presetNameInput">Preset Naam</label>
+    <input type="text" id="presetNameInput" value="MUSE_Balloon" maxlength="30" placeholder="Naam voor export..." />
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
+    <button type="button" class="btn-secondary" id="exportSqlBtn" style="padding: 9px 8px; font-size: 0.8rem;">
+      💾 Exporteer .SQL
+    </button>
+    <button type="button" class="btn-secondary" id="importSqlBtn" style="padding: 9px 8px; font-size: 0.8rem;">
+      📂 Importeer .SQL
+    </button>
+  </div>
+  <input type="file" id="sqlFileInput" accept=".sql,.txt" style="display: none;" />
+
+  <button type="button" class="theme-preset-btn" id="copySqlBtn" style="width: 100%; justify-content: center; margin-top: 6px;">
+    📋 Kopieer SQL naar Klembord
+  </button>
+
   <div class="btn-group">
     <button class="btn-primary" id="exportAllBtn">⬇️ Download Volledig STL (1 bestand)</button>
     <button class="btn-secondary" id="exportSeparateBtn">📦 Download Losse Letters (per STL)</button>
@@ -468,6 +550,7 @@
 </div>
 
 <div id="canvas-container">
+  <div class="toast-notification" id="toastNotification"></div>
   <button class="mobile-panel-toggle" id="mobileToggleBtn">⚙️ Instellingen</button>
   <div class="view-bar">
     <button class="view-btn" id="viewFront">Front</button>
@@ -537,6 +620,17 @@
   const fontCache = {};
 
   const FONT_PRESETS = {
+    // 🎈 Ballon & Display Google Fonts (.ttf)
+    'titan_one': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/titanone/TitanOne-Regular.ttf',
+    'lilita_one': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/lilitaone/LilitaOne-Regular.ttf',
+    'chewy': 'https://cdn.jsdelivr.net/gh/google/fonts@main/apache/chewy/Chewy-Regular.ttf',
+    'luckiest_guy': 'https://cdn.jsdelivr.net/gh/google/fonts@main/apache/luckiestguy/LuckiestGuy-Regular.ttf',
+    'sniglet': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/sniglet/Sniglet-ExtraBold.ttf',
+    'bungee': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/bungee/Bungee-Regular.ttf',
+    'righteous': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/righteous/Righteous-Regular.ttf',
+    'alfa_slab_one': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/alfaslabone/AlfaSlabOne-Regular.ttf',
+    'pacifico': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/pacifico/Pacifico-Regular.ttf',
+    // 🔤 Standaard Three.js Typeface Fonts (.json)
     'helvetiker_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json',
     'helvetiker_regular': 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json',
     'optimer_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/optimer_bold.typeface.json',
@@ -633,38 +727,79 @@
   document.getElementById('viewIso').addEventListener('click', () => setCameraAngle(0, -0.75, 0.65));
   document.getElementById('viewTop').addEventListener('click', () => setCameraAngle(0, -0.001, 1));
 
-  // Font loader met caching
+  function showToast(message, duration = 3000) {
+    const toast = document.getElementById('toastNotification');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add('show');
+    if (toast._timer) clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => {
+      toast.classList.remove('show');
+    }, duration);
+  }
+
+  // Font loader met caching voor zowel Three.js Typeface JSON als TTF/OTF via OpenType.js
   const fontLoader = new FontLoader();
   function setFontByKey(fontKey) {
     if (fontCache[fontKey]) {
       loadedFont = fontCache[fontKey];
+      syncColorPickers();
       scheduleUpdateModel(true);
       return;
     }
     const url = FONT_PRESETS[fontKey];
     if (!url) return;
 
-    fontLoader.load(url, (font) => {
-      fontCache[fontKey] = font;
-      loadedFont = font;
-      syncColorPickers();
-      scheduleUpdateModel(true);
-    }, undefined, (err) => {
-      console.error('Fout bij inladen lettertype:', err);
-    });
+    showToast('⏳ Lettertype inladen...', 2000);
+
+    if (url.endsWith('.typeface.json')) {
+      fontLoader.load(url, (font) => {
+        fontCache[fontKey] = font;
+        loadedFont = font;
+        syncColorPickers();
+        scheduleUpdateModel(true);
+      }, undefined, (err) => {
+        console.error('Fout bij inladen lettertype:', err);
+        showToast('⚠️ Fout bij inladen lettertype');
+      });
+    } else {
+      fetch(url)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then((buf) => {
+          const otFont = opentype.parse(buf);
+          const typefaceData = convertOpenTypeToThreeFont(otFont);
+          const font = new Font(typefaceData);
+          fontCache[fontKey] = font;
+          loadedFont = font;
+          syncColorPickers();
+          scheduleUpdateModel(true);
+        })
+        .catch((err) => {
+          console.error('Fout bij inladen TTF lettertype:', err);
+          showToast('⚠️ Kon TTF niet inladen, fallback naar Helvetiker');
+          if (fontKey !== 'helvetiker_bold') {
+            document.getElementById('fontSelect').value = 'helvetiker_bold';
+            setFontByKey('helvetiker_bold');
+          }
+        });
+    }
   }
 
   document.getElementById('fontSelect').addEventListener('change', (e) => {
     setFontByKey(e.target.value);
   });
 
-  // Initieel standaard lettertype (Helvetiker Bold)
-  setFontByKey('helvetiker_bold');
+  // Initieel standaard lettertype (Titan One - extra bol & mollig)
+  setFontByKey('titan_one');
 
   // Eigen .ttf / .otf lettertype uploaden
   document.getElementById('fontUpload').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    showToast('⏳ Eigen lettertype verwerken...', 2000);
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -679,8 +814,11 @@
         customOpt.textContent = `Eigen: ${file.name.slice(0, 18)}`;
         document.getElementById('fontSelect').value = 'custom';
 
+        showToast('✨ Eigen lettertype succesvol geladen!');
+        syncColorPickers();
         scheduleUpdateModel(true);
       } catch (err) {
+        console.error('Fout bij verwerken eigen font:', err);
         alert('Kon dit lettertype niet inladen. Kies een geldig .ttf- of .otf-bestand.');
       }
     };
@@ -688,34 +826,40 @@
   });
 
   function convertOpenTypeToThreeFont(font) {
-    const scale = (1000 * 100) / ((font.unitsPerEm || 2048) * 72);
+    const scale = 1000 / (font.unitsPerEm || 1000);
     const result = {
       glyphs: {},
-      familyName: font.names.fontFamily?.en || 'CustomFont',
-      ascender: Math.round(font.ascender * scale),
-      descender: Math.round(font.descender * scale),
-      underlinePosition: Math.round((font.tables.post?.underlinePosition || -100) * scale),
-      underlineThickness: Math.round((font.tables.post?.underlineThickness || 50) * scale),
+      familyName: (font.names && font.names.fontFamily && font.names.fontFamily.en) || 'CustomFont',
+      ascender: Math.round((font.ascender || 800) * scale),
+      descender: Math.round((font.descender || -200) * scale),
+      underlinePosition: Math.round(((font.tables && font.tables.post && font.tables.post.underlinePosition) || -100) * scale),
+      underlineThickness: Math.round(((font.tables && font.tables.post && font.tables.post.underlineThickness) || 50) * scale),
       boundingBox: {
-        yMin: Math.round((font.tables.head?.yMin || -200) * scale),
-        xMin: Math.round((font.tables.head?.xMin || 0) * scale),
-        yMax: Math.round((font.tables.head?.yMax || 800) * scale),
-        xMax: Math.round((font.tables.head?.xMax || 1000) * scale)
+        yMin: Math.round(((font.tables && font.tables.head && font.tables.head.yMin) || -200) * scale),
+        xMin: Math.round(((font.tables && font.tables.head && font.tables.head.xMin) || 0) * scale),
+        yMax: Math.round(((font.tables && font.tables.head && font.tables.head.yMax) || 800) * scale),
+        xMax: Math.round(((font.tables && font.tables.head && font.tables.head.xMax) || 1000) * scale)
       },
       resolution: 1000,
-      original_font_information: font.tables.name
+      original_font_information: font.tables && font.tables.name
     };
 
-    for (let i = 0; i < font.glyphs.length; i++) {
+    const numGlyphs = (font.glyphs && font.glyphs.length) || 0;
+    for (let i = 0; i < numGlyphs; i++) {
       const glyph = font.glyphs.get(i);
-      if (glyph.unicode !== undefined) {
-        const token = {
-          ha: Math.round(glyph.advanceWidth * scale),
-          x_min: Math.round((glyph.xMin || 0) * scale),
-          x_max: Math.round((glyph.xMax || 0) * scale),
-          o: ''
-        };
-        glyph.path.commands.forEach((cmd) => {
+      const unicodes = glyph.unicodes && glyph.unicodes.length ? glyph.unicodes : (glyph.unicode !== undefined ? [glyph.unicode] : []);
+      if (unicodes.length === 0) continue;
+
+      const token = {
+        ha: Math.round(glyph.advanceWidth * scale),
+        x_min: Math.round((glyph.xMin || 0) * scale),
+        x_max: Math.round((glyph.xMax || 0) * scale),
+        o: ''
+      };
+
+      const path = glyph.path || (glyph.getPath ? glyph.getPath(0, 0, font.unitsPerEm || 1000) : null);
+      if (path && path.commands) {
+        path.commands.forEach((cmd) => {
           const type = cmd.type.toLowerCase();
           if (type === 'm' || type === 'l') {
             token.o += `${type} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
@@ -725,8 +869,11 @@
             token.o += `b ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x2 * scale)} ${Math.round(cmd.y2 * scale)} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
           }
         });
-        result.glyphs[String.fromCharCode(glyph.unicode)] = token;
       }
+
+      unicodes.forEach((code) => {
+        result.glyphs[String.fromCharCode(code)] = token;
+      });
     }
     return result;
   }
@@ -1494,6 +1641,360 @@
       }
     });
   });
+
+  // Snelle Voorinstellingen (Quick Presets)
+  const QUICK_PRESETS = {
+    'classic_puffy': {
+      font: 'titan_one',
+      style: 'puffy',
+      pattern: 'smooth',
+      size: 80,
+      height: 14,
+      inflate: 6.5,
+      density: 3.5,
+      dome: 8.0,
+      spacing: 4,
+      mount: 'none'
+    },
+    'mega_fluffy': {
+      font: 'sniglet',
+      style: 'puffy',
+      pattern: 'smooth',
+      size: 85,
+      height: 16,
+      inflate: 8.5,
+      density: 5.5,
+      dome: 12.0,
+      spacing: 5,
+      mount: 'none'
+    },
+    'foil_party': {
+      font: 'righteous',
+      style: 'foil',
+      pattern: 'smooth',
+      size: 75,
+      height: 12,
+      inflate: 5.0,
+      density: 2.0,
+      dome: 6.0,
+      spacing: 4,
+      mount: 'hanging'
+    },
+    'ceramic_deco': {
+      font: 'lilita_one',
+      style: 'ceramic',
+      pattern: 'smooth',
+      size: 85,
+      height: 15,
+      inflate: 7.0,
+      density: 3.5,
+      dome: 9.0,
+      spacing: 4,
+      mount: 'none'
+    },
+    'chunky_retro': {
+      font: 'alfa_slab_one',
+      style: 'puffy',
+      pattern: 'knit',
+      size: 80,
+      height: 15,
+      inflate: 6.0,
+      density: 3.0,
+      dome: 7.5,
+      spacing: 6,
+      mount: 'magnet'
+    },
+    'keychain_compact': {
+      font: 'titan_one',
+      style: 'puffy',
+      pattern: 'smooth',
+      size: 45,
+      height: 10,
+      inflate: 4.5,
+      density: 2.5,
+      dome: 5.0,
+      spacing: 3,
+      mount: 'keychain'
+    }
+  };
+
+  function applyPresetData(data) {
+    if (!data) return;
+
+    if (data.text !== undefined && data.text !== null) {
+      document.getElementById('textInput').value = data.text;
+    }
+    if (data.name) {
+      document.getElementById('presetNameInput').value = data.name;
+    }
+    if (data.layout) {
+      currentLayout = data.layout;
+      document.querySelectorAll('#layoutSelector .pill').forEach((p) => {
+        p.classList.toggle('active', p.getAttribute('data-layout') === currentLayout);
+      });
+    }
+    if (data.style) {
+      currentStyle = data.style;
+      document.querySelectorAll('#styleSelector .pill').forEach((p) => {
+        p.classList.toggle('active', p.getAttribute('data-style') === currentStyle);
+      });
+    }
+    if (data.pattern) {
+      const patternEl = document.getElementById('patternInput');
+      if (patternEl) patternEl.value = data.pattern;
+    }
+    if (data.size !== undefined) {
+      document.getElementById('sizeInput').value = data.size;
+      document.getElementById('sizeVal').textContent = data.size;
+    }
+    if (data.height !== undefined) {
+      document.getElementById('heightInput').value = data.height;
+      document.getElementById('heightVal').textContent = data.height;
+    }
+    if (data.inflate !== undefined) {
+      document.getElementById('inflateInput').value = data.inflate;
+      document.getElementById('inflateVal').textContent = data.inflate;
+    }
+    if (data.density !== undefined) {
+      document.getElementById('densityInput').value = data.density;
+      document.getElementById('densityVal').textContent = data.density;
+    }
+    if (data.dome !== undefined) {
+      document.getElementById('domeInput').value = data.dome;
+      document.getElementById('domeVal').textContent = data.dome;
+    }
+    if (data.spacing !== undefined) {
+      document.getElementById('spacingInput').value = data.spacing;
+      document.getElementById('spacingVal').textContent = data.spacing;
+    }
+    if (data.mount) {
+      const mountEl = document.getElementById('mountInput');
+      if (mountEl) mountEl.value = data.mount;
+    }
+    if (data.colors) {
+      let parsedColors = null;
+      if (Array.isArray(data.colors)) {
+        parsedColors = data.colors;
+      } else if (typeof data.colors === 'string') {
+        try {
+          parsedColors = JSON.parse(data.colors);
+        } catch (e) {
+          parsedColors = data.colors.split(',').map((s) => s.trim().replace(/['"]/g, ''));
+        }
+      }
+      if (Array.isArray(parsedColors) && parsedColors.length > 0) {
+        letterColors = parsedColors;
+      }
+    }
+
+    if (data.font) {
+      const fontSelect = document.getElementById('fontSelect');
+      fontSelect.value = data.font;
+      setFontByKey(data.font);
+    } else {
+      syncColorPickers();
+      scheduleUpdateModel(true);
+    }
+  }
+
+  document.getElementById('quickPresetSelect').addEventListener('change', (e) => {
+    const presetKey = e.target.value;
+    const preset = QUICK_PRESETS[presetKey];
+    if (preset) {
+      applyPresetData(preset);
+      showToast('✨ Voorinstelling geactiveerd!');
+    }
+  });
+
+  // SQL Preset Export & Import Functionaliteit
+  function generatePresetSQL() {
+    const rawName = document.getElementById('presetNameInput').value.trim() || 'MUSE_Balloon';
+    const safeName = rawName.replace(/'/g, "''");
+    const text = document.getElementById('textInput').value.trim() || 'MUSE';
+    const safeText = text.replace(/'/g, "''");
+    const layout = currentLayout;
+    const font = document.getElementById('fontSelect').value;
+    const style = currentStyle;
+    const pattern = document.getElementById('patternInput').value;
+    const size = parseFloat(document.getElementById('sizeInput').value);
+    const height = parseFloat(document.getElementById('heightInput').value);
+    const inflate = parseFloat(document.getElementById('inflateInput').value);
+    const density = parseFloat(document.getElementById('densityInput').value);
+    const dome = parseFloat(document.getElementById('domeInput').value);
+    const spacing = parseFloat(document.getElementById('spacingInput').value);
+    const mount = document.getElementById('mountInput').value;
+    const colorsJson = JSON.stringify(letterColors).replace(/'/g, "''");
+    const dateStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+    return `-- ========================================================
+-- Muse Atelier — Balloon Letter Factory
+-- Preset: ${safeName}
+-- Export Datum: ${dateStr}
+-- ========================================================
+
+CREATE TABLE IF NOT EXISTS muse_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    text TEXT NOT NULL,
+    layout TEXT NOT NULL,
+    font TEXT NOT NULL,
+    style TEXT NOT NULL,
+    pattern TEXT NOT NULL,
+    size REAL NOT NULL,
+    height REAL NOT NULL,
+    inflate REAL NOT NULL,
+    density REAL NOT NULL,
+    dome REAL NOT NULL,
+    spacing REAL NOT NULL,
+    mount TEXT NOT NULL,
+    colors TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+INSERT INTO muse_presets (
+    name, text, layout, font, style, pattern,
+    size, height, inflate, density, dome, spacing,
+    mount, colors, created_at
+) VALUES (
+    '${safeName}',
+    '${safeText}',
+    '${layout}',
+    '${font}',
+    '${style}',
+    '${pattern}',
+    ${size.toFixed(2)},
+    ${height.toFixed(2)},
+    ${inflate.toFixed(2)},
+    ${density.toFixed(2)},
+    ${dome.toFixed(2)},
+    ${spacing.toFixed(2)},
+    '${mount}',
+    '${colorsJson}',
+    '${dateStr}'
+);
+`;
+  }
+
+  function parsePresetSQL(sqlText) {
+    const insertMatch = sqlText.match(/INSERT\s+INTO\s+[\w`"]+\s*\(([^)]+)\)\s*VALUES\s*\(([\s\S]+?)\);?/i);
+    if (insertMatch) {
+      const cols = insertMatch[1].split(',').map((c) => c.trim().replace(/[`"'[\]]/g, ''));
+      const raw = insertMatch[2].trim();
+      const vals = [];
+      let cur = '';
+      let inQuote = false;
+      let quoteChar = '';
+      let i = 0;
+      while (i < raw.length) {
+        const ch = raw[i];
+        if (inQuote) {
+          if (ch === quoteChar && (i === 0 || raw[i - 1] !== '\\')) {
+            if (i + 1 < raw.length && raw[i + 1] === quoteChar) {
+              cur += quoteChar;
+              i++;
+            } else {
+              inQuote = false;
+            }
+          } else {
+            cur += ch;
+          }
+        } else {
+          if (ch === "'" || ch === '"') {
+            inQuote = true;
+            quoteChar = ch;
+          } else if (ch === ',') {
+            vals.push(cur.trim());
+            cur = '';
+          } else {
+            cur += ch;
+          }
+        }
+        i++;
+      }
+      vals.push(cur.trim());
+
+      const result = {};
+      cols.forEach((col, idx) => {
+        let v = vals[idx] !== undefined ? vals[idx] : '';
+        if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+          v = v.slice(1, -1).replace(/''/g, "'");
+        }
+        result[col] = v;
+      });
+      return result;
+    }
+
+    const jsonMatch = sqlText.match(/\{[\s\S]*"size"[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  document.getElementById('exportSqlBtn').addEventListener('click', () => {
+    const sql = generatePresetSQL();
+    const rawName = document.getElementById('presetNameInput').value.trim() || 'muse_preset';
+    const filename = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '_')}.sql`;
+    const blob = new Blob([sql], { type: 'application/sql;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    showToast(`💾 Preset opgeslagen als ${filename}!`);
+  });
+
+  const sqlFileInput = document.getElementById('sqlFileInput');
+  document.getElementById('importSqlBtn').addEventListener('click', () => {
+    sqlFileInput.value = '';
+    sqlFileInput.click();
+  });
+
+  sqlFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const sqlText = evt.target.result;
+        const data = parsePresetSQL(sqlText);
+        if (!data || Object.keys(data).length === 0) {
+          throw new Error('Geen geldige SQL preset gevonden');
+        }
+        applyPresetData(data);
+        showToast(`✨ Preset "${data.name || file.name}" succesvol geïmporteerd!`);
+      } catch (err) {
+        console.error('Fout bij importeren SQL:', err);
+        alert('Kon het SQL-bestand niet inlezen. Controleer of het een geldige Muse Atelier preset is.');
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('copySqlBtn').addEventListener('click', () => {
+    const sql = generatePresetSQL();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(sql).then(() => {
+        showToast('📋 SQL gekopieerd naar klembord!');
+      }).catch(() => {
+        fallbackCopy(sql);
+      });
+    } else {
+      fallbackCopy(sql);
+    }
+  });
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('📋 SQL gekopieerd naar klembord!');
+  }
 
   // Mobiel paneel toggle knop
   const mobileToggleBtn = document.getElementById('mobileToggleBtn');
