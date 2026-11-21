@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Muse Made — Balloon Letter Factory</title>
+<script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+<style>
+*{box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
+body{margin:0;display:flex;height:100vh;background:#121216;color:#f0f0f5;overflow:hidden}
+#sidebar{width:370px;max-width:42vw;padding:20px;background:#1c1c24;border-right:1px solid #2e2e3a;display:flex;flex-direction:column;gap:13px;overflow-y:auto;z-index:10}
+h1{font-size:1.2rem;margin:0;color:#ff6b6b;display:flex;align-items:center;gap:8px}
+.section-title{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#888899;border-bottom:1px solid #2e2e3a;padding-bottom:4px;margin-top:4px}
+.control-group{display:flex;flex-direction:column;gap:5px}
+label{font-size:.84rem;color:#ccc;display:flex;justify-content:space-between;align-items:center}
+input[type=text],select{padding:8px 10px;border-radius:6px;border:1px solid #3a3a48;background:#262632;color:#fff;font-size:.92rem}
+input[type=file]{font-size:.8rem;color:#aaa}
+input[type=file]::file-selector-button{padding:6px 10px;border-radius:5px;border:1px solid #4a4a5e;background:#323242;color:#fff;cursor:pointer;margin-right:8px}
+input[type=range]{accent-color:#ff6b6b;cursor:pointer}
+.style-pills{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pill{padding:8px;text-align:center;background:#262632;border:1px solid #3a3a48;border-radius:6px;cursor:pointer;font-size:.84rem;transition:.15s}
+.pill.active{background:#ff6b6b;border-color:#ff6b6b;color:#fff;font-weight:bold}
+.color-row{display:flex;gap:6px;flex-wrap:wrap}
+.letter-color-box{display:flex;flex-direction:column;align-items:center;gap:2px;background:#262632;padding:4px;border-radius:6px;border:1px solid #3a3a48}
+.letter-color-box span{font-size:.72rem;font-weight:bold}
+input[type=color]{width:26px;height:22px;border:none;background:none;cursor:pointer;padding:0}
+.btn-group{display:flex;flex-direction:column;gap:8px;margin-top:auto;padding-top:12px}
+button{padding:11px;border:none;border-radius:8px;font-weight:bold;font-size:.92rem;cursor:pointer;transition:.2s}
+.btn-primary{background:#ff6b6b;color:#fff}.btn-primary:hover{background:#ff5252}
+.btn-secondary{background:#323242;color:#fff;border:1px solid #4a4a5e}.btn-secondary:hover{background:#3f3f52}
+#canvas-container{flex:1;position:relative;min-width:0}
+.hint{position:absolute;bottom:16px;right:16px;font-size:.8rem;color:#888;background:rgba(18,18,22,.85);padding:6px 12px;border-radius:6px;pointer-events:none}
+@media(max-width:700px){body{flex-direction:column}#sidebar{width:100%;max-width:none;height:45vh}#canvas-container{height:55vh}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="sidebar">
+<h1>🎈 Muse Made — Balloon Letter Factory</h1>
+<div class="section-title">1. Tekst & lettertype</div>
+<div class="control-group"><label>Tekst / Naam</label><input type="text" id="textInput" value="SOPHIE" maxlength="16"></div>
+<div class="control-group"><label>Eigen lettertype (.ttf / .otf)</label><input type="file" id="fontUpload" accept=".ttf,.otf"></div>
+<div class="control-group"><label>Ballonstijl</label><div class="style-pills" id="styleSelector"><div class="pill active" data-style="bubble">Bubble</div><div class="pill" data-style="puffy">Puffy</div><div class="pill" data-style="foil">Foil</div></div></div>
+<div class="control-group"><label>Oppervlakte-patroon (3D reliëf)</label><select id="patternInput"><option value="smooth">Glad (Standaard)</option><option value="stars">Sterretjes / Stippen</option><option value="hearts">Hartjes-reliëf</option><option value="knit">Gebreid / Ruitpatroon</option></select></div>
+<div class="control-group"><label>Kleuren per letter</label><div class="color-row" id="letterColors"></div></div>
+<div class="section-title">2. Afmetingen & opblazen</div>
+<div class="control-group"><label>Hoogte letters (mm) <span id="sizeVal">60</span></label><input type="range" id="sizeInput" min="20" max="150" step="2" value="60"></div>
+<div class="control-group"><label>Totale dikte (mm) <span id="heightVal">12</span></label><input type="range" id="heightInput" min="4" max="30" step="1" value="12"></div>
+<div class="control-group"><label>Bolling / Opblaasfactor <span id="inflateVal">4.5</span></label><input type="range" id="inflateInput" min="1" max="10" step=".5" value="4.5"></div>
+<div class="control-group"><label>Letter-afstand (overlap) <span id="spacingVal">-3</span></label><input type="range" id="spacingInput" min="-12" max="15" step=".5" value="-3"></div>
+<div class="section-title">3. Bevestiging (vlakke achterkant)</div>
+<div class="control-group"><label>Type bevestiging</label><select id="mountInput"><option value="none">Geen (alleen vlakke achterkant)</option><option value="keychain">Sleutelhanger-oogje (links)</option><option value="hanging">2 Ophang-oogjes (bovenop voor slinger)</option><option value="magnet">Magneet-houder (10x2mm achterkant)</option><option value="keyhole">Schroefgat / Keyhole (muurmontage)</option></select></div>
+<div class="btn-group"><button class="btn-primary" id="exportAllBtn">⬇️ Download Volledig STL (1 bestand)</button><button class="btn-secondary" id="exportSeparateBtn">📦 Download Losse Letters (per STL)</button></div>
+</div>
+<div id="canvas-container"><div class="hint">Linkermuisknop: draaien | Scroll: zoomen | Rechtermuisknop: verplaatsen (Z=0 is printbed)</div></div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {FontLoader} from 'three/addons/loaders/FontLoader.js';
+import {TextGeometry} from 'three/addons/geometries/TextGeometry.js';
+import {STLExporter} from 'three/addons/exporters/STLExporter.js';
+
+const container=document.getElementById('canvas-container');
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x121216);
+const camera=new THREE.PerspectiveCamera(45,container.clientWidth/container.clientHeight,.1,2000);
+camera.position.set(0,-140,160);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(container.clientWidth,container.clientHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));container.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0xffffff,.55));
+const light1=new THREE.DirectionalLight(0xffffff,1.8);light1.position.set(80,-80,150);scene.add(light1);
+const light2=new THREE.DirectionalLight(0xaaccff,.8);light2.position.set(-100,100,60);scene.add(light2);
+const grid=new THREE.GridHelper(300,30,0x444455,0x22222c);grid.rotation.x=Math.PI/2;scene.add(grid);
+const modelGroup=new THREE.Group();scene.add(modelGroup);
+const palette=['#ff6b6b','#ffd166','#06d6a0','#118ab2','#ef476f','#9b5de5','#f15bb5'];
+let letterColors=[],currentStyle='bubble',loadedFont=null;
+const loader=new FontLoader();
+loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json',font=>{loadedFont=font;syncColorPickers();updateModel();},undefined,()=>alert('Het standaardlettertype kon niet geladen worden. Controleer je internetverbinding.'));
+document.getElementById('fontUpload').addEventListener('change',e=>{
+ const file=e.target.files[0];if(!file)return;
+ const reader=new FileReader();reader.onload=ev=>{try{const otFont=opentype.parse(ev.target.result);loadedFont=new THREE.Font(convertOpenTypeToThreeFont(otFont));syncColorPickers();updateModel();}catch(err){console.error(err);alert('Kon dit lettertype niet inladen. Kies een geldig .ttf- of .otf-bestand.');}};
+ reader.readAsArrayBuffer(file);
+});
+function convertOpenTypeToThreeFont(font){
+ const scale=1000/(font.unitsPerEm||2048);
+ const result={glyphs:{},familyName:font.names.fontFamily?.en||'CustomFont',ascender:Math.round(font.ascender*scale),descender:Math.round(font.descender*scale),underlinePosition:Math.round((font.tables.post?.underlinePosition||-100)*scale),underlineThickness:Math.round((font.tables.post?.underlineThickness||50)*scale),boundingBox:{yMin:Math.round((font.tables.head?.yMin||-200)*scale),xMin:Math.round((font.tables.head?.xMin||0)*scale),yMax:Math.round((font.tables.head?.yMax||800)*scale),xMax:Math.round((font.tables.head?.xMax||1000)*scale)},resolution:1000};
+ for(let i=0;i<font.glyphs.length;i++){const glyph=font.glyphs.get(i);if(glyph.unicode===undefined)continue;
+  const token={ha:Math.round(glyph.advanceWidth*scale),x_min:Math.round((glyph.xMin||0)*scale),x_max:Math.round((glyph.xMax||0)*scale),o:''};
+  glyph.path.commands.forEach(cmd=>{const t=cmd.type.toLowerCase();if(t==='m'||t==='l')token.o+=`${t} ${Math.round(cmd.x*scale)} ${Math.round(cmd.y*scale)} `;else if(t==='q')token.o+=`q ${Math.round(cmd.x1*scale)} ${Math.round(cmd.y1*scale)} ${Math.round(cmd.x*scale)} ${Math.round(cmd.y*scale)} `;else if(t==='c')token.o+=`b ${Math.round(cmd.x1*scale)} ${Math.round(cmd.y1*scale)} ${Math.round(cmd.x2*scale)} ${Math.round(cmd.y2*scale)} ${Math.round(cmd.x*scale)} ${Math.round(cmd.y*scale)} `;});
+  result.glyphs[String.fromCharCode(glyph.unicode)]=token;
+ }return result;
+}
+document.querySelectorAll('.pill').forEach(p=>p.addEventListener('click',()=>{document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));p.classList.add('active');currentStyle=p.dataset.style;updateModel();}));
+function syncColorPickers(){const text=document.getElementById('textInput').value,el=document.getElementById('letterColors');el.innerHTML='';[...text].forEach((char,idx)=>{if(char===' ')return;if(!letterColors[idx])letterColors[idx]=palette[idx%palette.length];const box=document.createElement('div');box.className='letter-color-box';const label=document.createElement('span');label.textContent=char;const input=document.createElement('input');input.type='color';input.value=letterColors[idx];input.addEventListener('input',e=>{letterColors[idx]=e.target.value;updateModel();});box.append(label,input);el.appendChild(box);});}
+function processBalloonGeometry(geometry,style,inflate,pattern){
+ const pos=geometry.attributes.position;geometry.computeBoundingBox();const mid=(geometry.boundingBox.min.z+geometry.boundingBox.max.z)/2;
+ for(let i=0;i<pos.count;i++){let x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);if(z<=mid)z=0;else{z-=mid;if(style==='foil'){const wrinkle=Math.sin(x*.45)*Math.cos(y*.45)*(inflate*.14);z=Math.max(.2,z+wrinkle);}
+ if(z>1.5&&pattern!=='smooth'){if(pattern==='stars'){if(Math.sin(x*.9)*Math.sin(y*.9)>.65)z+=.55;}else if(pattern==='hearts'){const hx=(x%8)-4,hy=(y%8)-4;const eq=Math.pow(hx*.25,2)+Math.pow(hy*.25-Math.sqrt(Math.abs(hx*.25)),2);if(eq<.6)z+=.5;}else if(pattern==='knit')z+=Math.sin((x+y)*1.1)*Math.cos((x-y)*1.1)*.35;}}
+ pos.setXYZ(i,x,y,z);}geometry.computeVertexNormals();return geometry;
+}
+function createLoop(outerR,innerR,thickness){const shape=new THREE.Shape();shape.absarc(0,0,outerR,0,Math.PI*2,false);const hole=new THREE.Path();hole.absarc(0,0,innerR,0,Math.PI*2,true);shape.holes.push(hole);return new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:true,bevelSegments:4,steps:1,bevelSize:.6,bevelThickness:.6});}
+function updateModel(){
+ if(!loadedFont)return;while(modelGroup.children.length)modelGroup.remove(modelGroup.children[0]);
+ const text=document.getElementById('textInput').value||' ',size=+sizeInput.value,totalHeight=+heightInput.value,inflate=+inflateInput.value,spacing=+spacingInput.value,mountType=mountInput.value,pattern=patternInput.value;
+ sizeVal.textContent=size;heightVal.textContent=totalHeight;inflateVal.textContent=inflate;spacingVal.textContent=spacing;
+ let bevelSize=inflate,bevelThickness=totalHeight*.65,bevelSegments=16,roughness=.25,metalness=.05;
+ if(currentStyle==='puffy'){bevelSize=inflate*1.45;bevelThickness=totalHeight*.85;bevelSegments=22;roughness=.45;}
+ else if(currentStyle==='foil'){bevelSize=inflate*1.1;bevelThickness=totalHeight*.7;bevelSegments=18;roughness=.12;metalness=.65;}
+ let currentX=0;const chars=[...text];
+ chars.forEach((char,idx)=>{if(char===' '){currentX+=size*.35;return;}
+ const geo=new TextGeometry(char,{font:loadedFont,size,height:totalHeight,curveSegments:pattern==='smooth'?18:28,bevelEnabled:true,bevelThickness,bevelSize,bevelOffset:0,bevelSegments});
+ const balloonGeo=processBalloonGeometry(geo,currentStyle,inflate,pattern);balloonGeo.computeBoundingBox();const charWidth=balloonGeo.boundingBox.max.x-balloonGeo.boundingBox.min.x;
+ const mat=new THREE.MeshStandardMaterial({color:letterColors[idx]||palette[idx%palette.length],roughness,metalness});
+ const group=new THREE.Group();group.name=`letter_${idx}_${char}`;const mesh=new THREE.Mesh(balloonGeo,mat);mesh.position.x=-balloonGeo.boundingBox.min.x;mesh.position.y=-balloonGeo.boundingBox.min.y;group.add(mesh);
+ if(mountType==='hanging'){const loop=createLoop(4.5,2.2,Math.min(4,totalHeight*.4));const lm=new THREE.Mesh(loop,mat);lm.position.set(charWidth/2,balloonGeo.boundingBox.max.y-balloonGeo.boundingBox.min.y+1.5,.6);group.add(lm);}
+ if(mountType==='magnet'||mountType==='keyhole'){const outer=mountType==='magnet'?7:5.5,inner=mountType==='magnet'?5.1:2.5;const ring=new THREE.Mesh(createLoop(outer,inner,2.4),mat);ring.position.set(charWidth/2,(balloonGeo.boundingBox.max.y-balloonGeo.boundingBox.min.y)/2,.6);group.add(ring);}
+ group.position.x=currentX;modelGroup.add(group);currentX+=charWidth+spacing;});
+ const box=new THREE.Box3().setFromObject(modelGroup);
+ if(mountType==='keychain'&&text.trim()){const mat=new THREE.MeshStandardMaterial({color:letterColors[0]||palette[0],roughness,metalness});const ring=new THREE.Mesh(createLoop(5.5,2.8,Math.min(5,totalHeight*.5)),mat);ring.position.set(box.min.x-3,(box.max.y+box.min.y)/2,.6);ring.name='keychain_mount';modelGroup.add(ring);}
+ const finalBox=new THREE.Box3().setFromObject(modelGroup);modelGroup.position.set(-(finalBox.max.x+finalBox.min.x)/2,-(finalBox.max.y+finalBox.min.y)/2,0);
+}
+const sizeInput=document.getElementById('sizeInput'),heightInput=document.getElementById('heightInput'),inflateInput=document.getElementById('inflateInput'),spacingInput=document.getElementById('spacingInput'),mountInput=document.getElementById('mountInput'),patternInput=document.getElementById('patternInput'),sizeVal=document.getElementById('sizeVal'),heightVal=document.getElementById('heightVal'),inflateVal=document.getElementById('inflateVal'),spacingVal=document.getElementById('spacingVal');
+document.getElementById('textInput').addEventListener('input',()=>{syncColorPickers();updateModel();});
+[sizeInput,heightInput,inflateInput,spacingInput,mountInput,patternInput].forEach(el=>el.addEventListener('input',updateModel));
+function downloadSTL(obj,filename){const exporter=new STLExporter();const data=exporter.parse(obj,{binary:true});const blob=new Blob([data],{type:'application/octet-stream'});const link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);}
+function safeName(s){return(s||'balloon').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'balloon';}
+document.getElementById('exportAllBtn').addEventListener('click',()=>downloadSTL(modelGroup,`${safeName(textInput.value)}_${currentStyle}.stl`));
+document.getElementById('exportSeparateBtn').addEventListener('click',()=>{const base=safeName(textInput.value);let count=0;modelGroup.children.forEach(child=>{if(child.name.startsWith('letter_')){count++;const parts=child.name.split('_');downloadSTL(child,`${base}_${count}_${safeName(parts.slice(2).join('_'))}.stl`);}});});
+window.addEventListener('resize',()=>{camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);});
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);}animate();
+</script>
+</body>
+</html>
