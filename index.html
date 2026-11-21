@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>Muse Atelier — Balloon Letter Factory</title>
+  <title>Bubble letter factory</title>
   <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <style>
     :root {
@@ -391,7 +391,7 @@
 
 <div id="sidebar">
   <div class="brand-header">
-    <h1>🎈 Muse Atelier — Balloon Factory</h1>
+    <h1>🎈 Bubble letter factory</h1>
     <div class="brand-subtitle">Creative 3D Objects & Letter Studio</div>
   </div>
 
@@ -429,6 +429,10 @@
         <option value="optimer_bold">Optimer Bold (Klassiek)</option>
         <option value="gentilis_bold">Gentilis Bold (Futuristisch)</option>
         <option value="droid_sans_bold">Droid Sans Bold (Rond)</option>
+      </optgroup>
+      <optgroup label="🌙 Arabische Lettertypes (Arabic Fonts)">
+        <option value="amiri_bold">Amiri Bold (Traditioneel Naskh & Vloeiend)</option>
+        <option value="aref_ruqaa">Aref Ruqaa Bold (Sierlijk & Zacht)</option>
       </optgroup>
       <optgroup label="📁 Aangepast">
         <option value="custom" disabled id="customFontOption">Eigen lettertype (.ttf / .otf)</option>
@@ -521,12 +525,13 @@
       <option value="ceramic_deco">🏺 Mat Keramisch Luxe (Lilita One)</option>
       <option value="chunky_retro">🎸 Retro Chunky Blok (Alfa Slab)</option>
       <option value="keychain_compact">🔑 Mini Sleutelhanger (Compact)</option>
+      <option value="arabic_jannah">🌙 Arabische Kalligrafie — Jannah (Amiri)</option>
     </select>
   </div>
 
   <div class="control-group">
     <label for="presetNameInput">Preset Naam</label>
-    <input type="text" id="presetNameInput" value="MUSE_Balloon" maxlength="30" placeholder="Naam voor export..." />
+    <input type="text" id="presetNameInput" value="Bubble_Letter" maxlength="30" placeholder="Naam voor export..." />
   </div>
 
   <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px;">
@@ -635,7 +640,10 @@
     'helvetiker_regular': 'https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json',
     'optimer_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/optimer_bold.typeface.json',
     'gentilis_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/gentilis_bold.typeface.json',
-    'droid_sans_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json'
+    'droid_sans_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json',
+    // 🌙 Arabische Lettertypes (.ttf met complete Presentation Forms B)
+    'amiri_bold': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf',
+    'aref_ruqaa': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arefruqaaink/ArefRuqaaInk-Bold.ttf'
   };
 
   // Vloeiende bediening: debouncing voor slider updates
@@ -880,6 +888,146 @@
     return result;
   }
 
+  // --- ARABIC RESHAPING & RTL SUPPORT ---
+  // Vormt standaard Arabische letters (0x0600-0x06FF) dynamisch om naar Presentation Forms B (0xFE70-0xFEFF)
+  // inclusief Lam-Alef ligaturen, zodat Three.js FontLoader vloeiende verbindingen genereert
+  const ARABIC_FORMS = {
+    0x0621: [0xFE80, 0, 0, 0],
+    0x0622: [0xFE81, 0, 0, 0xFE82],
+    0x0623: [0xFE83, 0, 0, 0xFE84],
+    0x0624: [0xFE85, 0, 0, 0xFE86],
+    0x0625: [0xFE87, 0, 0, 0xFE88],
+    0x0626: [0xFE89, 0xFE8B, 0xFE8C, 0xFE8A],
+    0x0627: [0xFE8D, 0, 0, 0xFE8E],
+    0x0628: [0xFE8F, 0xFE91, 0xFE92, 0xFE90],
+    0x0629: [0xFE93, 0, 0, 0xFE94],
+    0x062A: [0xFE95, 0xFE97, 0xFE98, 0xFE96],
+    0x062B: [0xFE99, 0xFE9B, 0xFE9C, 0xFE9A],
+    0x062C: [0xFE9D, 0xFE9F, 0xFEA0, 0xFE9E],
+    0x062D: [0xFEA1, 0xFEA3, 0xFEA4, 0xFEA2],
+    0x062E: [0xFEA5, 0xFEA7, 0xFEA8, 0xFEA6],
+    0x062F: [0xFEA9, 0, 0, 0xFEAA],
+    0x0630: [0xFEAB, 0, 0, 0xFEAC],
+    0x0631: [0xFEAD, 0, 0, 0xFEAE],
+    0x0632: [0xFEAF, 0, 0, 0xFEB0],
+    0x0633: [0xFEB1, 0xFEB3, 0xFEB4, 0xFEB2],
+    0x0634: [0xFEB5, 0xFEB7, 0xFEB8, 0xFEB6],
+    0x0635: [0xFEB9, 0xFEBB, 0xFEBC, 0xFEBA],
+    0x0636: [0xFEBD, 0xFEBF, 0xFEC0, 0xFEBE],
+    0x0637: [0xFEC1, 0xFEC3, 0xFEC4, 0xFEC2],
+    0x0638: [0xFEC5, 0xFEC7, 0xFEC8, 0xFEC6],
+    0x0639: [0xFEC9, 0xFECB, 0xFECC, 0xFECA],
+    0x063A: [0xFECD, 0xFECF, 0xFED0, 0xFECE],
+    0x0641: [0xFED1, 0xFED3, 0xFED4, 0xFED2],
+    0x0642: [0xFED5, 0xFED7, 0xFED8, 0xFED6],
+    0x0643: [0xFED9, 0xFEDB, 0xFEDC, 0xFEDA],
+    0x0644: [0xFEDD, 0xFEDF, 0xFEE0, 0xFEDE],
+    0x0645: [0xFEE1, 0xFEE3, 0xFEE4, 0xFEE2],
+    0x0646: [0xFEE5, 0xFEE7, 0xFEE8, 0xFEE6],
+    0x0647: [0xFEE9, 0xFEEB, 0xFEEC, 0xFEEA],
+    0x0648: [0xFEED, 0, 0, 0xFEEE],
+    0x0649: [0xFEEF, 0, 0, 0xFEF0],
+    0x064A: [0xFEF1, 0xFEF3, 0xFEF4, 0xFEF2]
+  };
+
+  const ARABIC_LAM_ALEF = {
+    0x0622: [0xFEF5, 0xFEF6],
+    0x0623: [0xFEF7, 0xFEF8],
+    0x0625: [0xFEF9, 0xFEFA],
+    0x0627: [0xFEFB, 0xFEFC]
+  };
+
+  function isArabicTransparent(code) {
+    return (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+  }
+
+  function arabicConnectsBefore(code) {
+    const f = ARABIC_FORMS[code];
+    return f && (f[3] !== 0 || f[2] !== 0);
+  }
+
+  function arabicConnectsAfter(code) {
+    const f = ARABIC_FORMS[code];
+    return f && (f[1] !== 0 || f[2] !== 0);
+  }
+
+  function isArabicText(str) {
+    return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(str);
+  }
+
+  function reshapeArabic(text) {
+    if (!text) return '';
+    const codes = [];
+    for (let i = 0; i < text.length; i++) {
+      codes.push(text.charCodeAt(i));
+    }
+
+    const merged = [];
+    for (let i = 0; i < codes.length; i++) {
+      const c = codes[i];
+      if (c === 0x0644 && i + 1 < codes.length) {
+        let nextIdx = i + 1;
+        while (nextIdx < codes.length && isArabicTransparent(codes[nextIdx])) nextIdx++;
+        if (nextIdx < codes.length && ARABIC_LAM_ALEF[codes[nextIdx]]) {
+          merged.push({ type: 'lam_alef', alef: codes[nextIdx] });
+          i = nextIdx;
+          continue;
+        }
+      }
+      merged.push({ type: 'char', code: c });
+    }
+
+    const shaped = [];
+    for (let i = 0; i < merged.length; i++) {
+      const item = merged[i];
+      if (item.type === 'char' && isArabicTransparent(item.code)) {
+        continue;
+      }
+
+      let prevConnects = false;
+      for (let p = i - 1; p >= 0; p--) {
+        const prev = merged[p];
+        if (prev.type === 'char' && isArabicTransparent(prev.code)) continue;
+        if (prev.type === 'char') {
+          prevConnects = arabicConnectsAfter(prev.code);
+        } else if (prev.type === 'lam_alef') {
+          prevConnects = false;
+        }
+        break;
+      }
+
+      let nextConnects = false;
+      for (let n = i + 1; n < merged.length; n++) {
+        const next = merged[n];
+        if (next.type === 'char' && isArabicTransparent(next.code)) continue;
+        if (next.type === 'char') {
+          nextConnects = arabicConnectsBefore(next.code);
+        } else if (next.type === 'lam_alef') {
+          nextConnects = true;
+        }
+        break;
+      }
+
+      if (item.type === 'lam_alef') {
+        const pair = ARABIC_LAM_ALEF[item.alef];
+        shaped.push(prevConnects ? pair[1] : pair[0]);
+      } else {
+        const forms = ARABIC_FORMS[item.code];
+        if (!forms) {
+          shaped.push(item.code);
+        } else {
+          let formIndex = 0;
+          if (prevConnects && nextConnects && forms[2]) formIndex = 2;
+          else if (nextConnects && forms[1]) formIndex = 1;
+          else if (prevConnects && forms[3]) formIndex = 3;
+          else formIndex = 0;
+          shaped.push(forms[formIndex] || forms[0]);
+        }
+      }
+    }
+    return String.fromCharCode(...shaped);
+  }
+
   // Stijl-knoppen (Ceramic, Bubble, Puffy, Foil)
   document.querySelectorAll('#styleSelector .pill').forEach((pill) => {
     pill.addEventListener('click', () => {
@@ -902,11 +1050,14 @@
 
   // Kleurenkiezers per letter
   function syncColorPickers() {
-    const text = document.getElementById('textInput').value;
+    const rawText = document.getElementById('textInput').value;
+    const isArabic = isArabicText(rawText);
+    const textToDisplay = isArabic ? reshapeArabic(rawText) : rawText;
     const colorContainer = document.getElementById('letterColors');
     colorContainer.innerHTML = '';
 
-    [...text].forEach((char, idx) => {
+    const chars = [...textToDisplay];
+    chars.forEach((char, idx) => {
       if (char === ' ') return;
       if (!letterColors[idx]) {
         letterColors[idx] = jannahPalette[idx % jannahPalette.length];
@@ -1439,9 +1590,24 @@
 
     let currentX = 0;
     let currentY = 0;
-    const chars = [...text];
 
-    chars.forEach((char, idx) => {
+    const isArabic = isArabicText(text);
+    let chars = [];
+    if (isArabic) {
+      const reshaped = reshapeArabic(text);
+      if (currentLayout === 'vertical') {
+        chars = [...reshaped].map((char, originalIdx) => ({ char, colorIdx: originalIdx }));
+      } else {
+        // In Three.js X loopt van links naar rechts.
+        // Voor Arabisch (RTL) schrijven we van rechts naar links:
+        // Door de reshaped tekens om te keren verschijnt de eerste letter rechts en opeenvolgende letters links.
+        chars = [...reshaped].map((char, originalIdx) => ({ char, colorIdx: originalIdx })).reverse();
+      }
+    } else {
+      chars = [...text].map((char, originalIdx) => ({ char, colorIdx: originalIdx }));
+    }
+
+    chars.forEach(({ char, colorIdx }, idx) => {
       if (char === ' ') {
         if (currentLayout === 'vertical') {
           currentY -= size * 0.45;
@@ -1462,7 +1628,7 @@
       const charHeight = balloonGeo.boundingBox.max.y - balloonGeo.boundingBox.min.y;
 
       const mat = new THREE.MeshStandardMaterial({
-        color: letterColors[idx] || jannahPalette[idx % jannahPalette.length],
+        color: letterColors[colorIdx] || jannahPalette[colorIdx % jannahPalette.length],
         roughness: roughness,
         metalness: metalness
       });
@@ -1602,12 +1768,14 @@
   }
 
   document.getElementById('exportAllBtn').addEventListener('click', () => {
-    const baseName = (document.getElementById('textInput').value || 'balloon').toLowerCase().replace(/[^a-z0-9]/g, '_');
-    downloadSTL(modelGroup, `${baseName}_${currentStyle}_${currentLayout}.stl`);
+    const rawName = (document.getElementById('textInput').value || 'bubble').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const safeName = rawName || 'bubble';
+    downloadSTL(modelGroup, `${safeName}_${currentStyle}_${currentLayout}.stl`);
   });
 
   document.getElementById('exportSeparateBtn').addEventListener('click', () => {
-    const baseName = (document.getElementById('textInput').value || 'balloon').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const rawName = (document.getElementById('textInput').value || 'bubble').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const baseName = rawName || 'bubble';
     let count = 0;
     modelGroup.children.forEach((child) => {
       if (child.name && child.name.startsWith('letter_')) {
@@ -1691,6 +1859,19 @@
       dome: 5.0,
       spacing: 3,
       mount: 'keychain'
+    },
+    'arabic_jannah': {
+      text: 'جنة',
+      font: 'amiri_bold',
+      style: 'puffy',
+      pattern: 'smooth',
+      size: 90,
+      height: 15,
+      inflate: 6.5,
+      density: 3.5,
+      dome: 9.0,
+      spacing: 4,
+      mount: 'none'
     }
   };
 
@@ -1784,9 +1965,9 @@
 
   // SQL Preset Export & Import Functionaliteit
   function generatePresetSQL() {
-    const rawName = document.getElementById('presetNameInput').value.trim() || 'MUSE_Balloon';
+    const rawName = document.getElementById('presetNameInput').value.trim() || 'Bubble_Letter';
     const safeName = rawName.replace(/'/g, "''");
-    const text = document.getElementById('textInput').value.trim() || 'MUSE';
+    const text = document.getElementById('textInput').value.trim() || 'Bubble';
     const safeText = text.replace(/'/g, "''");
     const layout = currentLayout;
     const font = document.getElementById('fontSelect').value;
@@ -1803,12 +1984,12 @@
     const dateStr = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
     return `-- ========================================================
--- Muse Atelier — Balloon Letter Factory
+-- Bubble letter factory
 -- Preset: ${safeName}
 -- Export Datum: ${dateStr}
 -- ========================================================
 
-CREATE TABLE IF NOT EXISTS muse_presets (
+CREATE TABLE IF NOT EXISTS bubble_presets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -1827,7 +2008,7 @@ CREATE TABLE IF NOT EXISTS muse_presets (
     created_at TEXT NOT NULL
 );
 
-INSERT INTO muse_presets (
+INSERT INTO bubble_presets (
     name, text, layout, font, style, pattern,
     size, height, inflate, density, dome, spacing,
     mount, colors, created_at
@@ -1911,7 +2092,7 @@ INSERT INTO muse_presets (
 
   document.getElementById('exportSqlBtn').addEventListener('click', () => {
     const sql = generatePresetSQL();
-    const rawName = document.getElementById('presetNameInput').value.trim() || 'muse_preset';
+    const rawName = document.getElementById('presetNameInput').value.trim() || 'bubble_preset';
     const filename = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '_')}.sql`;
     const blob = new Blob([sql], { type: 'application/sql;charset=utf-8' });
     const link = document.createElement('a');
@@ -1943,7 +2124,7 @@ INSERT INTO muse_presets (
         showToast(`✨ Preset "${data.name || file.name}" succesvol geïmporteerd!`);
       } catch (err) {
         console.error('Fout bij importeren SQL:', err);
-        alert('Kon het SQL-bestand niet inlezen. Controleer of het een geldige Muse Atelier preset is.');
+        alert('Kon het SQL-bestand niet inlezen. Controleer of het een geldige preset is.');
       }
     };
     reader.readAsText(file);
