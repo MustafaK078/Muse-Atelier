@@ -432,7 +432,6 @@
       </optgroup>
       <optgroup label="🌙 Arabische Lettertypes (Arabic Fonts)">
         <option value="amiri_bold">Amiri Bold (Traditioneel Naskh & Vloeiend)</option>
-        <option value="aref_ruqaa">Aref Ruqaa Bold (Sierlijk & Zacht)</option>
       </optgroup>
       <optgroup label="📁 Aangepast">
         <option value="custom" disabled id="customFontOption">Eigen lettertype (.ttf / .otf)</option>
@@ -643,7 +642,7 @@
     'droid_sans_bold': 'https://unpkg.com/three@0.160.0/examples/fonts/droid/droid_sans_bold.typeface.json',
     // 🌙 Arabische Lettertypes (.ttf met complete Presentation Forms B)
     'amiri_bold': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf',
-    'aref_ruqaa': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arefruqaaink/ArefRuqaaInk-Bold.ttf'
+    'aref_ruqaa': 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/amiri/Amiri-Bold.ttf'
   };
 
   // Vloeiende bediening: debouncing voor slider updates
@@ -1617,8 +1616,20 @@
         return;
       }
 
-      const shapes = loadedFont.generateShapes(char, size);
+      let shapes = null;
+      try {
+        shapes = loadedFont.generateShapes(char, size);
+      } catch (e) {
+        shapes = null;
+      }
       if (!shapes || shapes.length === 0) return;
+
+      // Filter vraagtekens '?' veroorzaakt door ontbrekende glyphs in custom/niet-ondersteunde lettertypes
+      if (char !== '?' && loadedFont.data && loadedFont.data.glyphs && loadedFont.data.glyphs['?']) {
+        const qGlyph = loadedFont.data.glyphs['?'];
+        const curGlyph = loadedFont.data.glyphs[char];
+        if (!curGlyph || (curGlyph.o && qGlyph.o && curGlyph.o === qGlyph.o)) return;
+      }
 
       const balloonGeo = generateBalloonGeometry(shapes, size, totalHeight, inflate, domeHeight, density, currentStyle, pattern);
       if (!balloonGeo) return;
