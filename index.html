@@ -864,9 +864,11 @@
           if (type === 'm' || type === 'l') {
             token.o += `${type} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
           } else if (type === 'q') {
-            token.o += `q ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
+            // Three.js FontLoader verwacht: end-point (x, y) eerst, daarna control-point (x1, y1)
+            token.o += `q ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} `;
           } else if (type === 'c') {
-            token.o += `b ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x2 * scale)} ${Math.round(cmd.y2 * scale)} ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} `;
+            // Three.js FontLoader verwacht: end-point (x, y) eerst, daarna cp1 (x1, y1) en cp2 (x2, y2)
+            token.o += `b ${Math.round(cmd.x * scale)} ${Math.round(cmd.y * scale)} ${Math.round(cmd.x1 * scale)} ${Math.round(cmd.y1 * scale)} ${Math.round(cmd.x2 * scale)} ${Math.round(cmd.y2 * scale)} `;
           }
         });
       }
